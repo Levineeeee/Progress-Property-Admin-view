@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Property Map Visualization</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body { margin: 0; padding: 0; display: flex; }
+    .sidebar {
+      width: 25%; height: 100vh; padding: 20px;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+      box-sizing: border-box;
+    }
+    #map { height: 100vh; width: 75%; }
+    input, button { margin-bottom: 10px; width: 100%; padding: 10px; box-sizing: border-box; }
+
+    /* 默认隐藏 Logo */
+    #logo {
+      position: absolute;
+      display: none;
+      width: 100px;
+      z-index: 1000;
+    }
+
+    /* 导出时地图覆盖整个页面 */
+    .map-fullscreen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    /* 导出后显示 Logo */
+    .map-fullscreen #logo {
+      display: block;
+      top: 10px;
+      right: 10px;
+      position: absolute;
+      width: 200px;
+      height: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 左侧的属性信息输入栏 -->
+  <div class="sidebar" id="sidebar">
+    <h2>Property Information</h2>
+    <label for="address">Address:</label>
+    <input type="text" id="address" placeholder="Enter address" />
+
+    <label for="beds">Beds:</label>
+    <input type="number" id="beds" placeholder="Number of beds" />
+
+    <label for="baths">Baths:</label>
+    <input type="number" id="baths" placeholder="Number of baths" />
+
+    <label for="reception">Reception:</label>
+    <input type="number" id="reception" placeholder="Number of receptions" />
+
+    <label for="hmo">HMO:</label>
+    <input type="checkbox" id="hmo" />
+
+    <label for="rent">Rent:</label>
+    <input type="text" id="rent" placeholder="Rent amount" />
+
+    <button id="addProperty">Add Property</button>
+    <button id="exportMap">Export Map</button>
+    <button id="exportJson">Export as JSON</button> <!-- 导出 JSON 按钮 -->
+    <button id="backToEdit" style="display:none;">Back to Edit</button> <!-- 回退到编辑按钮 -->
+  </div>
+
+  <!-- Logo 图片 -->
+  <img id="logo" src="logo.png" alt="Logo" />
+
+  <!-- 地图 -->
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+  <script>
+    // 初始化地图
+    const map = L.map('map').setView([51.64, -0.3], 13);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // 全局 markers 数组，用于存储所有标记及其信息
+    let markers = [];
+
+    // 添加房产标记
+    document.getElementById('addProperty').addEventListener('click', () => {
+      const address = document.getElementById('address').value;
+      const beds = document.getElementById('beds').value;
+      const baths = document.getElementById('baths').value;
+      const reception = document.getElementById('reception').value;
+      const hmo = document.getElementById('hmo').checked ? 'Yes' : 'No';
+      const rent = document.getElementById('rent').value;
+
+      const latlng = [51.64, -0.3];  // 示例静态坐标
+      const marker = L.marker(latlng, { draggable: true }).addTo(map);
+
+      marker.bindPopup(`
+        <b>${address}</b><br/>
+        Beds: ${beds}<br/>
+        Baths: ${baths}<br/>
+        Reception: ${reception}<br/>
+        HMO: ${hmo}<br/>
+        Rent: £${rent}<br/>
+        <button class="delete-btn" onclick="deleteMarker(this)">Delete</button>
+      `);
+
+    // 将当前标记对象存储在按钮元素上
+    marker.on('popupopen', () => {
+      const deleteBtn = document.querySelector('.delete-btn');
+      if (deleteBtn) {
+        deleteBtn.marker = marker;  // 将 `marker` 对象存储到按钮上
+      }
+    });
+
+      // 保存标记及其相关数据到 markers 数组
+      markers.push({
+        marker: marker,
+        data: {
+          address: address,
+          beds: beds,
+          baths: baths,
+          reception: reception,
+          hmo: hmo,
+          rent: rent
+        }
+      });
+    });
+
+    // 删除标记的功能
+    function deleteMarker(button) {
+    const marker = button.marker; // 获取对应的标记对象
+     if (marker) {
+       map.removeLayer(marker);    // 直接删除该标记
+
+       // 从 markers 数组中移除该标记
+       markers = markers.filter(m => m !== marker);
+      }
+    }
+
+    // 导出 JSON 文件
+    document.getElementById('exportJson').addEventListener('click', () => {
+      const properties = markers.map(item => {
+        return {
+          address: item.data.address,
+          beds: item.data.beds,
+          baths: item.data.baths,
+          reception: item.data.reception,
+          hmo: item.data.hmo,
+          rent: item.data.rent,
+          latlng: item.marker.getLatLng()  // 获取标记的经纬度
+        };
+      });
+
+      // 将 properties 转换为 JSON 字符串
+      const jsonString = JSON.stringify(properties, null, 2);
+
+      // 创建 Blob 对象并生成下载链接
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'properties.json';  // 设置下载文件名
+      a.click();  // 自动触发下载
+    });
+
+    // 导出地图功能，禁用拖动功能并隐藏删除按钮
+    document.getElementById('exportMap').addEventListener('click', () => {
+      document.getElementById('logo').style.display = 'block';    // 显示 Logo
+      document.getElementById('map').style.width = '75%';         // 保持地图宽度
+      map.getContainer().classList.add('map-fullscreen');         // 应用全屏样式
+      map.invalidateSize();  // 重新计算地图大小
+
+      // 禁用所有标记的拖动功能
+      markers.forEach(item => {
+        item.marker.dragging.disable();  // 禁用拖动
+        item.marker.getPopup().setContent(
+          `<b>${item.data.address}</b><br/>
+          Beds: ${item.data.beds}<br/>
+          Baths: ${item.data.baths}<br/>
+          Reception: ${item.data.reception}<br/>
+          HMO: ${item.data.hmo}<br/>
+          Rent: £${item.data.rent}`
+        );  // 隐藏删除按钮
+      });
+
+      // 显示回退按钮
+      document.getElementById('backToEdit').style.display = 'block';
+    });
+
+    // 回退到编辑功能
+    document.getElementById('backToEdit').addEventListener('click', () => {
+      document.getElementById('logo').style.display = 'none';      // 隐藏 Logo
+      document.getElementById('map').style.width = '75%';          // 保持地图宽度
+      map.getContainer().classList.remove('map-fullscreen');       // 移除全屏样式
+      map.invalidateSize();  // 重新计算地图大小
+
+      // 启用所有标记的拖动功能，并显示删除按钮
+      markers.forEach(item => {
+        item.marker.dragging.enable();  // 启用拖动
+        item.marker.getPopup().setContent(
+          `<b>${item.data.address}</b><br/>
+          Beds: ${item.data.beds}<br/>
+          Baths: ${item.data.baths}<br/>
+          Reception: ${item.data.reception}<br/>
+          HMO: ${item.data.hmo}<br/>
+          Rent: £${item.data.rent}<br/>
+          <button class="delete-btn" onclick="deleteMarker(this)">Delete</button>`
+        );
+      });
+
+      // 隐藏回退按钮
+      document.getElementById('backToEdit').style.display = 'none';
+    });
+  </script>
+
+</body>
+</html>
